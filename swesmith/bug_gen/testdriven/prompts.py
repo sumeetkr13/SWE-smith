@@ -5,13 +5,18 @@ This module contains prompts for code reconciliation - updating implementation
 to satisfy mutated tests while potentially breaking other tests.
 """
 
-RECONCILIATION_SYSTEM_PROMPT = """You are a code modification expert. Your task is to update implementation code to satisfy a modified test specification.
+RECONCILIATION_SYSTEM_PROMPT = """You are a code modification expert. Your task is to make SURGICAL changes to implementation code to satisfy a modified test specification.
 
 CRITICAL REQUIREMENTS:
 1. The updated code MUST pass the modified test
-2. Try to maintain compatibility with other tests, but it's OK if some break (this is desired for creating regression bugs)
-3. Make MINIMAL changes - only what's needed to satisfy the new test
-4. Preserve code style and structure
+2. Make MINIMAL, SURGICAL changes - change ONLY the specific lines/logic needed
+3. PRESERVE ALL existing code structure:
+   - Keep ALL docstrings exactly as they are
+   - Keep ALL comments exactly as they are
+   - Keep the same imports (do NOT add duplicate imports)
+   - Keep the same function/method signatures
+   - Keep the same class structure
+4. Try to maintain compatibility with other tests, but it's OK if some break (this is desired for creating regression bugs)
 5. Do NOT modify the test itself - only the implementation
 6. Do NOT add extensive error handling or validation unless specifically required by the mutated test
 
@@ -21,7 +26,7 @@ You will receive:
 - The current implementation
 - Related tests for context (DO NOT modify these)
 
-Your goal: Update the implementation to pass the modified test. It's acceptable (and sometimes desired) if this breaks other tests, as we're exploring spec-overfitting scenarios."""
+Your goal: Make the SMALLEST possible change to pass the modified test. Think of this as a lazy developer who overfits to one test case - they change just enough to make the new test pass, potentially breaking other tests."""
 
 
 RECONCILIATION_TASK_PROMPT = """## Task
@@ -51,44 +56,72 @@ A test has been modified to have different requirements. Update the implementati
 
 ## Instructions
 
-1. **Analyze the change:** Understand what changed between original and modified test
-2. **Identify minimal changes:** Determine the minimal code changes needed to satisfy the modified test
-3. **Update implementation:** Modify the code to pass the mutated test
-4. **Consider side effects:** Think about how this might affect other tests (it's OK if they break)
+1. **Analyze the difference:** Compare the original and modified test to identify EXACTLY what changed
+2. **Identify the minimal change:** Find the SINGLE line or expression that needs to change
+3. **Make surgical modification:** Change ONLY that specific line/expression
+4. **Preserve everything else:** Keep all docstrings, comments, imports, and structure EXACTLY as shown
 
 ## Output Format
 
 Provide ONLY the updated implementation code in a ```python code block.
 
-**CRITICAL**: You are modifying an EXISTING function/class. Provide the complete code for ONLY the entity being modified (the function/class shown in "Current Implementation"). Do NOT create new classes or duplicate existing ones.
+**CRITICAL RULES**:
+1. You are modifying an EXISTING function/class - provide the complete code for ONLY the entity shown in "Current Implementation"
+2. Do NOT create new classes or duplicate existing ones
+3. PRESERVE ALL docstrings and comments exactly as they appear
+4. Do NOT add new imports - use only what's already imported
+5. Make the SMALLEST possible change to pass the mutated test
 
-Requirements:
+**Requirements:**
 - Complete code for the entity being modified (same name and signature as Current Implementation)
-- Preserve function/class name and signature exactly as shown
-- Include all necessary imports at the top
-- No explanations outside code comments
+- ALL docstrings preserved verbatim
+- ALL comments preserved verbatim
+- Same imports as Current Implementation
+- MINIMAL logic changes (usually 1-3 lines)
+- No explanations outside the code block
 - No test code
-- No unrelated code
 
-Example - if Current Implementation shows a function:
+**Examples of GOOD minimal changes:**
+
+Example 1 - Changing a regex pattern:
 ```python
-def example_function(x, y):
-    # Updated to handle broader input range
-    if x > 1000:  # New condition for mutated test
-        return x * 2
+class DateTimeParser:
+    """Original docstring preserved exactly."""
+
+    _FOUR_DIGIT_RE: ClassVar[Pattern[str]] = re.compile(r"\d{4,}")  # Changed from \d{4}
+
+    def parse(self, date_str):
+        """Original method docstring preserved."""
+        # Original comment preserved
+        return self._FOUR_DIGIT_RE.match(date_str)
+```
+
+Example 2 - Relaxing a validation:
+```python
+def validate_input(x, y):
+    """Original docstring preserved exactly."""
+    # Only validate x, removed y validation to pass mutated test
+    if x < 0:
+        raise ValueError("x must be positive")
     return x + y
 ```
 
-Example - if Current Implementation shows a class:
+Example 3 - Broadening a condition:
 ```python
-class DateTimeParser:
-    def parse(self, date_str, fmt):
-        # Updated to handle broader date ranges
-        if fmt == "YYYY" and len(date_str) > 4:
-            # Handle extended year formats
-            return datetime(int(date_str), 1, 1)
-        # ... rest of implementation
+def process_value(val):
+    """Process a value within acceptable range."""
+    # Changed <= to < to allow boundary value
+    if val < 1000:  # Was: val <= 1000
+        return val * 2
+    return val
 ```
+
+**BAD examples (DO NOT DO THIS):**
+❌ Removing all docstrings
+❌ Removing all comments
+❌ Adding duplicate imports
+❌ Rewriting entire methods when only one line needs to change
+❌ Adding new functionality not required by the mutated test
 
 Now provide the updated implementation for the entity shown in Current Implementation:"""
 

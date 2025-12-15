@@ -280,11 +280,13 @@ def _identify_covered_entities(
     Identify code entities covered by this test.
 
     Strategy:
-    1. Parse imports in test file to find implementation modules
+    1. Parse imports to find implementation modules AND specific imported names
     2. Extract function calls from test body
     3. Use test name heuristics (test_foo -> foo)
-    4. Match calls/names to actual entities in implementation files
-    5. Return list of matched CodeEntity objects
+    4. Match with priority scoring:
+       - Priority 10: Explicitly imported names (from X import Y)
+       - Priority 5: Generic function calls or test name inference
+    5. Return top-ranked matched CodeEntity objects
 
     Args:
         test_entity: The test function entity
@@ -292,7 +294,7 @@ def _identify_covered_entities(
         rp: RepoProfile instance
 
     Returns:
-        List of CodeEntity objects that this test covers
+        List of CodeEntity objects that this test covers (up to 3)
     """
     import ast
     import re
@@ -310,8 +312,10 @@ def _identify_covered_entities(
             logger.debug(f"Coverage analysis not yet supported for {ext}")
             return []
 
-        # 1. Parse imports from test file to find implementation modules
-        impl_files = _extract_implementation_files(test_entity.file_path, repo)
+        # 1. Parse imports to get both files and specific imported names
+        impl_files, imported_names = _extract_imports_with_names(
+            test_entity.file_path, repo
+        )
 
         # 2. Extract function/class calls from test body
         called_names = _extract_called_names(test_entity)
@@ -323,7 +327,11 @@ def _identify_covered_entities(
             inferred_name = test_name[5:]  # Remove "test_" prefix
             called_names.add(inferred_name)
 
-        # 4. For each implementation file, get entities and match
+        # Prioritize explicitly imported names over generic calls
+        priority_names = imported_names
+        secondary_names = called_names - imported_names
+
+        # 4. For each implementation file, get entities and match with priority
         for impl_file in impl_files:
             entities = []
             try:
@@ -332,19 +340,26 @@ def _identify_covered_entities(
                 logger.debug(f"Could not parse {impl_file}: {e}")
                 continue
 
-            # Match entities by name
+            # Match entities by name with priority scoring
             for entity in entities:
-                if entity.name in called_names:
-                    covered.append(entity)
+                if entity.name in priority_names:
+                    covered.append((entity, 10))  # High priority
+                elif entity.name in secondary_names:
+                    covered.append((entity, 5))  # Lower priority
 
-        # Remove duplicates based on (file_path, name)
+        # Sort by priority (highest first) and deduplicate
+        covered.sort(key=lambda x: x[1], reverse=True)
         seen = set()
         unique_covered = []
-        for entity in covered:
+
+        for entity, priority in covered:
             key = (entity.file_path, entity.name)
             if key not in seen:
                 seen.add(key)
                 unique_covered.append(entity)
+
+        # Limit to top 3 matches
+        unique_covered = unique_covered[:3]
 
         if unique_covered:
             logger.debug(
@@ -359,21 +374,32 @@ def _identify_covered_entities(
         return []
 
 
-def _extract_implementation_files(test_file_path: str, repo: str) -> list[str]:
+def _extract_imports_with_names(
+    test_file_path: str, repo: str
+) -> tuple[list[str], set[str]]:
     """
-    Extract implementation file paths from imports in a test file.
+    Extract implementation file paths AND specific imported names from a test file.
+
+    This is crucial for priority scoring - explicitly imported names like
+    "from arrow.parser import DateTimeParser" should be prioritized over
+    generic function calls in the test body.
 
     Args:
         test_file_path: Path to the test file
         repo: Repository path
 
     Returns:
-        List of absolute paths to implementation files
+        Tuple of (list of file paths, set of imported names)
+
+    Example:
+        Input: "from arrow.parser import DateTimeParser, ParserError"
+        Output: (["arrow/parser.py"], {"DateTimeParser", "ParserError"})
     """
     import ast
     from pathlib import Path
 
     impl_files = []
+    imported_names = set()
 
     try:
         with open(test_file_path, "r") as f:
@@ -384,17 +410,8 @@ def _extract_implementation_files(test_file_path: str, repo: str) -> list[str]:
         repo_path = Path(repo) if Path(repo).exists() else Path.cwd() / repo
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                # import foo.bar
-                for alias in node.names:
-                    module_path = _resolve_module_to_file(
-                        alias.name, repo_path, test_dir
-                    )
-                    if module_path:
-                        impl_files.append(module_path)
-
-            elif isinstance(node, ast.ImportFrom):
-                # from foo.bar import baz
+            if isinstance(node, ast.ImportFrom):
+                # from arrow.parser import DateTimeParser, ParserError
                 if node.module:
                     module_path = _resolve_module_to_file(
                         node.module, repo_path, test_dir
@@ -402,10 +419,26 @@ def _extract_implementation_files(test_file_path: str, repo: str) -> list[str]:
                     if module_path:
                         impl_files.append(module_path)
 
+                        # Track specific imported names for priority scoring
+                        for alias in node.names:
+                            if alias.name != "*":
+                                imported_names.add(alias.name)
+
+            elif isinstance(node, ast.Import):
+                # import arrow.parser
+                for alias in node.names:
+                    module_path = _resolve_module_to_file(
+                        alias.name, repo_path, test_dir
+                    )
+                    if module_path:
+                        impl_files.append(module_path)
+                        # For "import X", we don't add to imported_names
+                        # since the test likely calls X.something()
+
     except Exception as e:
         logger.debug(f"Could not extract imports from {test_file_path}: {e}")
 
-    return list(set(impl_files))  # Remove duplicates
+    return list(set(impl_files)), imported_names
 
 
 def _resolve_module_to_file(
@@ -465,6 +498,11 @@ def _resolve_module_to_file(
 
     for path in possible_paths:
         if path.exists() and path.is_file():
+            # Skip files in test directories to avoid test utilities
+            path_parts = path.parts
+            if any(part in ["test", "tests", "testing"] for part in path_parts):
+                logger.debug(f"Skipping test file: {path}")
+                continue
             return str(path)
 
     return None

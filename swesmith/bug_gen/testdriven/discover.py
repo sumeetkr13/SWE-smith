@@ -152,7 +152,7 @@ def _discover_tests_in_file(
         return []
 
     try:
-        entities = get_entities_from_file(str(test_file), ext)
+        entities = get_entities_from_file[ext](str(test_file))
     except Exception as e:
         logger.debug(f"Could not parse {test_file}: {e}")
         return []
@@ -305,7 +305,7 @@ def get_related_tests(test_file: str, test_name: str) -> list[str]:
     """
     try:
         ext = Path(test_file).suffix
-        entities = get_entities_from_file(test_file, ext)
+        entities = get_entities_from_file[ext](test_file)
 
         related = [
             e.name

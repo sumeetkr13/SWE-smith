@@ -60,14 +60,17 @@ A test has been modified to have different requirements. Update the implementati
 
 Provide ONLY the updated implementation code in a ```python code block.
 
+**CRITICAL**: You are modifying an EXISTING function/class. Provide the complete code for ONLY the entity being modified (the function/class shown in "Current Implementation"). Do NOT create new classes or duplicate existing ones.
+
 Requirements:
-- Complete, runnable implementation (not a diff)
-- Same function/class signature
+- Complete code for the entity being modified (same name and signature as Current Implementation)
+- Preserve function/class name and signature exactly as shown
+- Include all necessary imports at the top
 - No explanations outside code comments
 - No test code
-- No other files
+- No unrelated code
 
-Example:
+Example - if Current Implementation shows a function:
 ```python
 def example_function(x, y):
     # Updated to handle broader input range
@@ -76,7 +79,18 @@ def example_function(x, y):
     return x + y
 ```
 
-Now provide the updated implementation:"""
+Example - if Current Implementation shows a class:
+```python
+class DateTimeParser:
+    def parse(self, date_str, fmt):
+        # Updated to handle broader date ranges
+        if fmt == "YYYY" and len(date_str) > 4:
+            # Handle extended year formats
+            return datetime(int(date_str), 1, 1)
+        # ... rest of implementation
+```
+
+Now provide the updated implementation for the entity shown in Current Implementation:"""
 
 
 RELATED_TESTS_SECTION = """### Related Tests (for context - DO NOT modify these)

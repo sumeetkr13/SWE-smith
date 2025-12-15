@@ -257,7 +257,11 @@ def main(
             total_stats["cost"] += result["cost"]
 
     # 5. Cleanup
-    shutil.rmtree(repo)
+    repo_path = Path(repo)
+    if repo_path.is_symlink():
+        repo_path.unlink()
+    elif repo_path.exists():
+        shutil.rmtree(repo)
 
     # 6. Print summary
     total_mutations = total_stats["success"] + total_stats["failed"]

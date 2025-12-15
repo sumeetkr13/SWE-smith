@@ -279,18 +279,235 @@ def _identify_covered_entities(
     """
     Identify code entities covered by this test.
 
-    This is a simplified heuristic version. A more sophisticated version
-    would:
-    - Parse imports to find modules
-    - Match function calls to actual implementations
-    - Use static analysis or coverage tools
+    Strategy:
+    1. Parse imports in test file to find implementation modules
+    2. Extract function calls from test body
+    3. Use test name heuristics (test_foo -> foo)
+    4. Match calls/names to actual entities in implementation files
+    5. Return list of matched CodeEntity objects
 
-    For now, we return an empty list and rely on manual specification
-    or future enhancement.
+    Args:
+        test_entity: The test function entity
+        repo: Repository path
+        rp: RepoProfile instance
+
+    Returns:
+        List of CodeEntity objects that this test covers
     """
-    # TODO: Implement sophisticated coverage analysis
-    # For now, return empty list
-    return []
+    import ast
+    import re
+    from pathlib import Path
+
+    covered = []
+
+    try:
+        # Get the test file extension to determine language
+        test_file_path = Path(test_entity.file_path)
+        ext = test_file_path.suffix
+
+        # Currently only support Python
+        if ext != ".py":
+            logger.debug(f"Coverage analysis not yet supported for {ext}")
+            return []
+
+        # 1. Parse imports from test file to find implementation modules
+        impl_files = _extract_implementation_files(test_entity.file_path, repo)
+
+        # 2. Extract function/class calls from test body
+        called_names = _extract_called_names(test_entity)
+
+        # 3. Add test name heuristic
+        # test_foo -> look for function named "foo"
+        test_name = test_entity.name
+        if test_name.startswith("test_"):
+            inferred_name = test_name[5:]  # Remove "test_" prefix
+            called_names.add(inferred_name)
+
+        # 4. For each implementation file, get entities and match
+        for impl_file in impl_files:
+            entities = []
+            try:
+                get_entities_from_file[ext](entities, impl_file)
+            except Exception as e:
+                logger.debug(f"Could not parse {impl_file}: {e}")
+                continue
+
+            # Match entities by name
+            for entity in entities:
+                if entity.name in called_names:
+                    covered.append(entity)
+
+        # Remove duplicates based on (file_path, name)
+        seen = set()
+        unique_covered = []
+        for entity in covered:
+            key = (entity.file_path, entity.name)
+            if key not in seen:
+                seen.add(key)
+                unique_covered.append(entity)
+
+        if unique_covered:
+            logger.debug(
+                f"Found {len(unique_covered)} covered entities for {test_entity.name}: "
+                f"{[e.name for e in unique_covered]}"
+            )
+
+        return unique_covered
+
+    except Exception as e:
+        logger.debug(f"Error identifying covered entities for {test_entity.name}: {e}")
+        return []
+
+
+def _extract_implementation_files(test_file_path: str, repo: str) -> list[str]:
+    """
+    Extract implementation file paths from imports in a test file.
+
+    Args:
+        test_file_path: Path to the test file
+        repo: Repository path
+
+    Returns:
+        List of absolute paths to implementation files
+    """
+    import ast
+    from pathlib import Path
+
+    impl_files = []
+
+    try:
+        with open(test_file_path, "r") as f:
+            test_content = f.read()
+
+        tree = ast.parse(test_content)
+        test_dir = Path(test_file_path).parent
+        repo_path = Path(repo) if Path(repo).exists() else Path.cwd() / repo
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                # import foo.bar
+                for alias in node.names:
+                    module_path = _resolve_module_to_file(
+                        alias.name, repo_path, test_dir
+                    )
+                    if module_path:
+                        impl_files.append(module_path)
+
+            elif isinstance(node, ast.ImportFrom):
+                # from foo.bar import baz
+                if node.module:
+                    module_path = _resolve_module_to_file(
+                        node.module, repo_path, test_dir
+                    )
+                    if module_path:
+                        impl_files.append(module_path)
+
+    except Exception as e:
+        logger.debug(f"Could not extract imports from {test_file_path}: {e}")
+
+    return list(set(impl_files))  # Remove duplicates
+
+
+def _resolve_module_to_file(
+    module_name: str, repo_path: Path, test_dir: Path
+) -> str | None:
+    """
+    Resolve a Python module name to an actual file path.
+
+    Args:
+        module_name: e.g., "arrow.parser"
+        repo_path: Root path of the repository
+        test_dir: Directory containing the test file
+
+    Returns:
+        Absolute path to the module file, or None if not found
+    """
+    # Skip standard library and test modules
+    skip_modules = {
+        "pytest",
+        "unittest",
+        "mock",
+        "typing",
+        "os",
+        "sys",
+        "datetime",
+        "json",
+        "re",
+        "pathlib",
+        "collections",
+        "itertools",
+        "functools",
+        "operator",
+        "io",
+        "copy",
+    }
+
+    # Get the top-level module name
+    top_level = module_name.split(".")[0]
+    if top_level in skip_modules:
+        return None
+
+    # Convert module path to file path
+    # e.g., arrow.parser -> arrow/parser.py
+    module_parts = module_name.split(".")
+
+    # Try multiple possible locations
+    possible_paths = [
+        # 1. Relative to repo root: arrow/parser.py
+        repo_path / "/".join(module_parts[:-1]) / f"{module_parts[-1]}.py",
+        # 2. As package: arrow/parser/__init__.py
+        repo_path / "/".join(module_parts) / "__init__.py",
+        # 3. Direct file: arrow.py
+        repo_path / f"{module_name.replace('.', '/')}.py",
+        # 4. Relative to test directory
+        test_dir / f"{module_name.replace('.', '/')}.py",
+    ]
+
+    for path in possible_paths:
+        if path.exists() and path.is_file():
+            return str(path)
+
+    return None
+
+
+def _extract_called_names(test_entity: CodeEntity) -> set[str]:
+    """
+    Extract names of functions/classes called in the test body.
+
+    Args:
+        test_entity: The test function entity
+
+    Returns:
+        Set of function/class names called in the test
+    """
+    import ast
+
+    called_names = set()
+
+    try:
+        # Parse the test function code
+        tree = ast.parse(test_entity.src_code)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                # Extract function name from Call node
+                if isinstance(node.func, ast.Name):
+                    # Simple call: foo()
+                    called_names.add(node.func.id)
+                elif isinstance(node.func, ast.Attribute):
+                    # Method call: obj.foo() or module.foo()
+                    # We want the method name
+                    called_names.add(node.func.attr)
+                    # Also try to get the object name for module.function() cases
+                    if isinstance(node.func.value, ast.Name):
+                        # If it's module.function(), we care about "function"
+                        # but also track the module name
+                        pass  # We already added the attr above
+
+    except Exception as e:
+        logger.debug(f"Could not extract function calls from test: {e}")
+
+    return called_names
 
 
 def get_related_tests(test_file: str, test_name: str) -> list[str]:

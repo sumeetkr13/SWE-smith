@@ -351,10 +351,23 @@ def _identify_covered_entities(
 
             # Match entities by name with priority scoring
             for entity in entities:
+                # Skip exception/error classes - they're usually imported but not the target
+                if entity.name.endswith(("Error", "Exception", "Warning")):
+                    logger.debug(f"Skipping exception class: {entity.name}")
+                    continue
+
+                # Boost priority if name matches test class inference
+                priority = 0
                 if entity.name in priority_names:
-                    covered.append((entity, 10))  # High priority
+                    priority = 10  # High priority
+                    # Extra boost if it matches the test class name
+                    if test_class_name and entity.name == test_class_name[4:]:
+                        priority = 15  # Highest priority
                 elif entity.name in secondary_names:
-                    covered.append((entity, 5))  # Lower priority
+                    priority = 5  # Lower priority
+
+                if priority > 0:
+                    covered.append((entity, priority))
 
         # Sort by priority (highest first) and deduplicate
         covered.sort(key=lambda x: x[1], reverse=True)

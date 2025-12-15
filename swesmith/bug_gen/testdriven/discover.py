@@ -320,12 +320,21 @@ def _identify_covered_entities(
         # 2. Extract function/class calls from test body
         called_names = _extract_called_names(test_entity)
 
-        # 3. Add test name heuristic
-        # test_foo -> look for function named "foo"
+        # 3. Add test name heuristics
         test_name = test_entity.name
+
+        # Heuristic 1: test_foo -> foo
         if test_name.startswith("test_"):
             inferred_name = test_name[5:]  # Remove "test_" prefix
             called_names.add(inferred_name)
+
+        # Heuristic 2: Get containing class name for class-based tests
+        # TestTagalogLocale -> TagalogLocale
+        test_class_name = _get_test_class_name(test_entity)
+        if test_class_name and test_class_name.startswith("Test"):
+            inferred_class = test_class_name[4:]  # Remove "Test" prefix
+            called_names.add(inferred_class)
+            imported_names.add(inferred_class)  # Boost priority
 
         # Prioritize explicitly imported names over generic calls
         priority_names = imported_names
@@ -498,12 +507,61 @@ def _resolve_module_to_file(
 
     for path in possible_paths:
         if path.exists() and path.is_file():
-            # Skip files in test directories to avoid test utilities
+            # Skip test utility files (but allow implementation in test dirs)
+            filename = path.name
             path_parts = path.parts
-            if any(part in ["test", "tests", "testing"] for part in path_parts):
-                logger.debug(f"Skipping test file: {path}")
+
+            # Only skip if it's clearly a test utility file
+            is_test_utility = (
+                filename.startswith("test_")
+                or filename.startswith("_test")
+                or filename in ["conftest.py", "utils.py", "helpers.py", "fixtures.py"]
+            ) and any(part in ["test", "tests", "testing"] for part in path_parts)
+
+            if is_test_utility:
+                logger.debug(f"Skipping test utility file: {path}")
                 continue
+
             return str(path)
+
+    return None
+
+
+def _get_test_class_name(test_entity: CodeEntity) -> str | None:
+    """
+    Get the name of the class containing this test function.
+
+    For class-based tests like:
+        class TestTagalogLocale:
+            def test_format(self): ...
+
+    Returns "TestTagalogLocale"
+
+    Args:
+        test_entity: The test function entity
+
+    Returns:
+        Class name if test is in a class, None otherwise
+    """
+    import ast
+
+    try:
+        # Read the test file
+        with open(test_entity.file_path, "r") as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+
+        # Find the class containing this function
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                # Check if this class contains our test function
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == test_entity.name:
+                        return node.name
+
+    except Exception as e:
+        logger.debug(f"Could not get test class name: {e}")
 
     return None
 

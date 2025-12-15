@@ -1354,6 +1354,16 @@ class String2Stringc4a72f59(PythonProfile):
     )
 
 
+@dataclass
+class Numpy8cec8201(PythonProfile):
+    owner: str = "numpy"
+    repo: str = "numpy"
+    commit: str = "8cec820126419e57858223d6a6d256d79f43fe25"
+    install_cmds: list = field(
+        default_factory=lambda: ["pip install -e ."]
+    )
+
+
 # Register all Python profiles with the global registry
 for name, obj in list(globals().items()):
     if (

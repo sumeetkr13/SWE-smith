@@ -164,7 +164,18 @@ def main(
 
     # 1. Clone repo and setup
     rp = registry.get(repo)
-    rp.clone()
+
+    # Check if repo already exists before cloning
+    repo_path = Path(repo)
+    if repo_path.exists():
+        logger.info(f"Repository {repo} already exists, skipping clone")
+    else:
+        try:
+            rp.clone()
+        except Exception as e:
+            logger.warning(f"Clone failed: {e}. Checking if repo exists anyway...")
+            if not repo_path.exists():
+                raise
 
     # 2. Discover tests
     logger.info("Discovering tests...")

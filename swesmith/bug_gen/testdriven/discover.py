@@ -598,9 +598,14 @@ def _resolve_module_to_file(
         repo_path / "/".join(module_parts) / "__init__.py",
         # 3. Direct file: arrow.py
         repo_path / f"{module_name.replace('.', '/')}.py",
-        # 4. Relative to test directory
+        # 4. For single-module packages: arrow -> arrow/arrow.py
+        repo_path / module_parts[0] / f"{module_parts[0]}.py" if len(module_parts) == 1 else None,
+        # 5. Relative to test directory
         test_dir / f"{module_name.replace('.', '/')}.py",
     ]
+
+    # Filter out None values
+    possible_paths = [p for p in possible_paths if p is not None]
 
     for path in possible_paths:
         if path.exists() and path.is_file():

@@ -77,7 +77,7 @@ def discover_tests(
     logger.info(f"Discovering tests in {repo}...")
 
     # Get test file paths
-    test_files = rp.test_paths
+    test_files = rp.get_test_files()
     if not test_files:
         logger.warning(f"No test files found in {repo}")
         return []

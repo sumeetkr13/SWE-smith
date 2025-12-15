@@ -83,45 +83,42 @@ Provide ONLY the updated implementation code in a ```python code block.
 
 **Examples of GOOD minimal changes:**
 
-Example 1 - Changing a regex pattern:
-```python
-class DateTimeParser:
-    """Original docstring preserved exactly."""
+Example 1 - Changing a regex pattern (only changed one line):
 
-    _FOUR_DIGIT_RE: ClassVar[Pattern[str]] = re.compile(r"\d{4,}")  # Changed from \d{4}
+    class DateTimeParser:
+        \"\"\"Original docstring preserved exactly.\"\"\"
 
-    def parse(self, date_str):
-        """Original method docstring preserved."""
-        # Original comment preserved
-        return self._FOUR_DIGIT_RE.match(date_str)
-```
+        _FOUR_DIGIT_RE: ClassVar[Pattern[str]] = re.compile(r"\d{4,}")  # Changed from \d{4}
 
-Example 2 - Relaxing a validation:
-```python
-def validate_input(x, y):
-    """Original docstring preserved exactly."""
-    # Only validate x, removed y validation to pass mutated test
-    if x < 0:
-        raise ValueError("x must be positive")
-    return x + y
-```
+        def parse(self, date_str):
+            \"\"\"Original method docstring preserved.\"\"\"
+            # Original comment preserved
+            return self._FOUR_DIGIT_RE.match(date_str)
 
-Example 3 - Broadening a condition:
-```python
-def process_value(val):
-    """Process a value within acceptable range."""
-    # Changed <= to < to allow boundary value
-    if val < 1000:  # Was: val <= 1000
-        return val * 2
-    return val
-```
+Example 2 - Relaxing a validation (removed one condition):
+
+    def validate_input(x, y):
+        \"\"\"Original docstring preserved exactly.\"\"\"
+        # Only validate x, removed y validation to pass mutated test
+        if x < 0:
+            raise ValueError("x must be positive")
+        return x + y
+
+Example 3 - Broadening a condition (changed one operator):
+
+    def process_value(val):
+        \"\"\"Process a value within acceptable range.\"\"\"
+        # Changed <= to < to allow boundary value
+        if val < 1000:  # Was: val <= 1000
+            return val * 2
+        return val
 
 **BAD examples (DO NOT DO THIS):**
-❌ Removing all docstrings
-❌ Removing all comments
-❌ Adding duplicate imports
-❌ Rewriting entire methods when only one line needs to change
-❌ Adding new functionality not required by the mutated test
+- Removing all docstrings
+- Removing all comments
+- Adding duplicate imports
+- Rewriting entire methods when only one line needs to change
+- Adding new functionality not required by the mutated test
 
 Now provide the updated implementation for the entity shown in Current Implementation:"""
 

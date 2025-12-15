@@ -83,17 +83,26 @@ class BroadenInputRange(TestMutation):
         src = test.test_function.src_code
 
         # Find numeric literals and multiply them
+        # Exclude numbers in regex patterns {n,} or {n,m}
         def replace_number(match):
-            num = int(match.group(0))
-            # Broaden: small numbers -> larger, large numbers -> much larger
-            if num < 10:
-                return str(num * 100)
-            elif num < 100:
-                return str(num * 10)
-            else:
-                return str(num * 2)
+            try:
+                num = int(match.group(0))
+                # Broaden: small numbers -> larger, large numbers -> much larger
+                if num < 10:
+                    return str(num * 100)
+                elif num < 100:
+                    return str(num * 10)
+                else:
+                    return str(num * 2)
+            except (ValueError, AttributeError):
+                # If we can't parse the number, leave it unchanged
+                return match.group(0)
 
-        mutated = re.sub(r"\b(\d+)\b", replace_number, src, count=3)
+        # Match numbers but NOT in regex quantifier patterns {n,} or {n,m}
+        # Use negative lookbehind for { and negative lookahead for , or }
+        pattern = r"(?<![{\\])\b(\d+)\b(?![,}])"
+
+        mutated = re.sub(pattern, replace_number, src, count=3)
 
         if mutated == src:
             return None

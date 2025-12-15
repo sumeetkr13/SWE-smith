@@ -286,7 +286,8 @@ def _identify_covered_entities(
     4. Match with priority scoring:
        - Priority 10: Explicitly imported names (from X import Y)
        - Priority 5: Generic function calls or test name inference
-    5. Return top-ranked matched CodeEntity objects
+    5. Filter out excluded entities (parsers, formatters, etc.)
+    6. Return top-ranked matched CodeEntity objects
 
     Args:
         test_entity: The test function entity
@@ -296,6 +297,19 @@ def _identify_covered_entities(
     Returns:
         List of CodeEntity objects that this test covers (up to 3)
     """
+    # Exclude complex classes that are hard to mutate correctly
+    EXCLUDED_CLASSES = {
+        "DateTimeParser",
+        "TzinfoParser",
+        "ArrowFormatter",
+        "Formatter",
+    }
+
+    # Exclude files that contain complex parsing/formatting logic
+    EXCLUDED_FILE_PATTERNS = [
+        "parser.py",
+        "formatter.py",
+    ]
     import ast
     import re
     from pathlib import Path
@@ -354,6 +368,16 @@ def _identify_covered_entities(
                 # Skip exception/error classes - they're usually imported but not the target
                 if entity.name.endswith(("Error", "Exception", "Warning")):
                     logger.debug(f"Skipping exception class: {entity.name}")
+                    continue
+
+                # Skip excluded classes (parsers, formatters, etc.)
+                if entity.name in EXCLUDED_CLASSES:
+                    logger.debug(f"Skipping excluded class: {entity.name}")
+                    continue
+
+                # Skip entities in excluded files
+                if any(pattern in entity.file_path for pattern in EXCLUDED_FILE_PATTERNS):
+                    logger.debug(f"Skipping entity in excluded file: {entity.name} in {entity.file_path}")
                     continue
 
                 # Boost priority if name matches test class inference

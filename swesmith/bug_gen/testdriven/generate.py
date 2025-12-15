@@ -106,6 +106,11 @@ def process_test(
                 continue
 
             target_entity = test.covered_entities[0]
+            logger.info(
+                f"Applying change to entity: {target_entity.name} "
+                f"in {target_entity.file_path} "
+                f"(lines {target_entity.line_start}-{target_entity.line_end})"
+            )
             apply_code_change(target_entity, bug_rewrite)
 
             # 5. Get patch

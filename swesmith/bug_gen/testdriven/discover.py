@@ -123,6 +123,28 @@ def discover_tests(
             logger.debug(f"Error processing {test_file}: {e}")
             continue
 
+    # Filter out test classes that are likely to fail entity identification
+    # Exclude parser, formatter, and locale tests
+    EXCLUDED_TEST_PATTERNS = [
+        "Parser",  # TestDateTimeParserParse, TestDateTimeParserISO, etc.
+        "Formatter",  # TestFormatterFormatToken, etc.
+        "Locale",  # TestTagalogLocale, TestRussianLocale, etc.
+    ]
+
+    filtered_candidates = []
+    for candidate in candidates:
+        test_name = candidate.test_name
+        # Check if test name contains any excluded patterns
+        if any(pattern in test_name for pattern in EXCLUDED_TEST_PATTERNS):
+            logger.debug(f"Excluding test due to pattern match: {test_name}")
+            continue
+        filtered_candidates.append(candidate)
+
+    candidates = filtered_candidates
+    logger.info(
+        f"After filtering: {len(candidates)} test candidates (excluded parser/formatter/locale tests)"
+    )
+
     # Sort by coverage score (descending) and assertion count
     candidates = sorted(
         candidates,
@@ -349,6 +371,17 @@ def _identify_covered_entities(
             inferred_class = test_class_name[4:]  # Remove "Test" prefix
             called_names.add(inferred_class)
             imported_names.add(inferred_class)  # Boost priority
+
+            # Heuristic 3: For method-based test classes, also try base class
+            # TestArrowHumanize -> Try both "ArrowHumanize" and "Arrow"
+            # TestArrowShift -> Try both "ArrowShift" and "Arrow"
+            for common_base in ["Arrow", "Factory", "Api"]:
+                if inferred_class.startswith(common_base):
+                    called_names.add(common_base)
+                    imported_names.add(common_base)  # Boost priority
+                    logger.debug(
+                        f"Added base class heuristic: {common_base} for {test_class_name}"
+                    )
 
         # Prioritize explicitly imported names over generic calls
         priority_names = imported_names

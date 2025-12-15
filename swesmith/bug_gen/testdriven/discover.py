@@ -15,6 +15,7 @@ from pathlib import Path
 from swesmith.bug_gen.adapters import get_entities_from_file
 from swesmith.constants import CodeEntity
 from swesmith.profiles.base import RepoProfile
+import glob
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,8 +77,27 @@ def discover_tests(
     """
     logger.info(f"Discovering tests in {repo}...")
 
-    # Get test file paths
-    test_files = rp.get_test_files()
+    # Get test file paths using glob patterns
+    # Assume repo is cloned in current directory
+    repo_path = Path(repo) if Path(repo).exists() else Path.cwd() / repo
+
+    test_files = []
+    # Common test file patterns
+    patterns = [
+        str(repo_path / "tests" / "test_*.py"),
+        str(repo_path / "tests" / "*_test.py"),
+        str(repo_path / "test" / "test_*.py"),
+        str(repo_path / "test" / "*_test.py"),
+        str(repo_path / "**/test_*.py"),
+    ]
+
+    for pattern in patterns:
+        found = glob.glob(pattern, recursive=True)
+        test_files.extend([Path(f) for f in found])
+
+    # Remove duplicates
+    test_files = list(set(test_files))
+
     if not test_files:
         logger.warning(f"No test files found in {repo}")
         return []

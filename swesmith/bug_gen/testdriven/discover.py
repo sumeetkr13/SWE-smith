@@ -353,7 +353,7 @@ def _identify_covered_entities(
             test_entity.file_path, repo
         )
 
-        logger.info(
+        logger.debug(
             f"[{test_entity.name}] Found {len(impl_files)} impl files, "
             f"{len(imported_names)} imported names: {imported_names}"
         )
@@ -374,7 +374,7 @@ def _identify_covered_entities(
                     impl_path = repo_path / "arrow" / f"{impl_name}.py"
                     if impl_path.exists():
                         impl_files.append(str(impl_path))
-                        logger.info(f"[{test_entity.name}] Added fallback file: {impl_path}")
+                        logger.debug(f"[{test_entity.name}] Added fallback file: {impl_path}")
 
         # 2. Extract function/class calls from test body
         called_names = _extract_called_names(test_entity)
@@ -415,7 +415,7 @@ def _identify_covered_entities(
             entities = []
             try:
                 get_entities_from_file[ext](entities, impl_file)
-                logger.info(
+                logger.debug(
                     f"[{test_entity.name}] Found {len(entities)} entities in {impl_file}: "
                     f"{[e.name for e in entities[:5]]}"
                 )

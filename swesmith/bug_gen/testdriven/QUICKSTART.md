@@ -4,24 +4,40 @@
 
 The test-driven module is part of SWE-smith and requires no additional dependencies.
 
+## Prerequisites
+
+1. **OpenAI API Key**: Set your API key
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+# Or add to .env file
+echo "OPENAI_API_KEY=your-key" >> .env
+```
+
+2. **Repository Setup**: Ensure symlink exists
+```bash
+cd ~/SWE-smith
+ln -s ~/path/to/repo <repo_name>
+# Example: ln -s ~/borntyping__python-colorlog.dfa10f59 .
+```
+
 ## Basic Usage
 
 ### 1. Generate bugs from a repository
 
 ```bash
 # Basic usage (generates ~10-20 bugs)
-python -m swesmith.bug_gen.testdriven.generate arrow__1d70d009 \
+python -m swesmith.bug_gen.testdriven.generate borntyping__python-colorlog.dfa10f59 \
   --model openai/gpt-4o \
   --n_bugs 2 \
   --max_bugs 20
 
 # With specific mutation types
-python -m swesmith.bug_gen.testdriven.generate arrow__1d70d009 \
+python -m swesmith.bug_gen.testdriven.generate borntyping__python-colorlog.dfa10f59 \
   --model openai/gpt-4o \
   --mutation_types broaden_input relax_assertion
 
 # With parallel processing
-python -m swesmith.bug_gen.testdriven.generate arrow__1d70d009 \
+python -m swesmith.bug_gen.testdriven.generate borntyping__python-colorlog.dfa10f59 \
   --model openai/gpt-4o \
   --n_workers 4
 ```
@@ -151,27 +167,67 @@ Each bug includes metadata like:
 
 ### Success Metrics
 
-Good run:
-- **Success rate**: 50-70%
-- **Cost per bug**: $0.01-0.05
-- **Validation rate**: 40-60% (after running validation harness)
+**Real Results (python-colorlog, 11 tests):**
+- **Tests processed**: 6
+- **Mutations attempted**: 15
+- **Initial success rate**: 20% (3/15 mutations generated patches)
+- **Validation rate**: 66% (2/3 patches broke tests)
+- **Total cost**: $0.01
+- **Cost per valid bug**: $0.005
+
+Good run expectations:
+- **Success rate**: 20-40% (initial generation)
+- **Cost per bug**: $0.003-0.01
+- **Validation rate**: 50-70% (after running validation harness)
 
 ## Troubleshooting
 
-### Issue: No tests discovered
+### Issue: No tests discovered / "No test files found"
 
+**Cause**: Missing or broken symlink to repository
+
+**Solution**:
+```bash
+cd ~/SWE-smith
+# Check if symlink exists
+ls -la <repo_name>
+
+# Create symlink if missing (use first 8 chars of commit hash)
+ln -s ~/path/to/repo <owner>__<repo>.<commit[:8]>
+
+# Example:
+ln -s ~/borntyping__python-colorlog.dfa10f59 borntyping__python-colorlog.dfa10f59
 ```
-Solution: Lower coverage_threshold
-python -m swesmith.bug_gen.testdriven.generate <repo> --coverage_threshold 0.1
-```
+
+### Issue: KeyError '4,' or similar
+
+**Cause**: Regex patterns in prompt template not escaped for `.format()`
+
+**Status**: ✅ **FIXED** in commit 9c89a3c (escaped `{4,}` to `{{4,}}`)
+
+### Issue: Numbers in strings being modified
+
+**Cause**: Regex-based mutation modifying string literals
+
+**Status**: ✅ **FIXED** in commit 130448a (switched to AST-based parsing)
+
+### Issue: "Could not identify target entity"
+
+**Cause**: Test discovery couldn't map test to implementation code
+
+**Solutions**:
+1. Lower coverage threshold: `--coverage_threshold 0.1`
+2. Some tests genuinely don't have clear targets (expected failures)
+3. Expected: 30-50% of tests may not have identifiable entities
 
 ### Issue: High failure rate
 
 ```
 Solutions:
 1. Use better model: --model openai/gpt-4o (instead of gpt-4o-mini)
-2. Focus on simpler mutations: --mutation_types relax_assertion modify_edge_case
+2. Focus on simpler mutations: --mutation_types relax_assertion expand_scope
 3. Increase coverage threshold: --coverage_threshold 0.5
+4. Check symlink exists and points to correct repo
 ```
 
 ### Issue: Too expensive
@@ -181,6 +237,18 @@ Solutions:
 1. Use cheaper model: --model openai/gpt-4o-mini
 2. Limit bugs: --max_bugs 20
 3. Reduce n_bugs: --n_bugs 1
+4. Expected cost: $0.003-0.01 per generated bug
+```
+
+### Issue: Docker errors during validation
+
+**Solution**:
+```bash
+# Ensure Docker is running
+docker ps
+
+# Pull required image
+docker pull jyangballin/swesmith.x86_64.<repo>.<commit>
 ```
 
 ## Next Steps

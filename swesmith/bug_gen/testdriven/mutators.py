@@ -80,29 +80,67 @@ class BroadenInputRange(TestMutation):
 
     def mutate(self, test: TestCandidate) -> Optional[BugRewrite]:
         """Broaden numeric input values."""
+        import ast
+
         src = test.test_function.src_code
 
-        # Find numeric literals and multiply them
-        # Exclude numbers in regex patterns {n,} or {n,m}
-        def replace_number(match):
-            try:
-                num = int(match.group(0))
-                # Broaden: small numbers -> larger, large numbers -> much larger
-                if num < 10:
-                    return str(num * 100)
-                elif num < 100:
-                    return str(num * 10)
-                else:
-                    return str(num * 2)
-            except (ValueError, AttributeError):
-                # If we can't parse the number, leave it unchanged
-                return match.group(0)
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            return None
 
-        # Match numbers but NOT in regex quantifier patterns {n,} or {n,m}
-        # Use negative lookbehind for { and negative lookahead for , or }
-        pattern = r"(?<![{\\])\b(\d+)\b(?![,}])"
+        # Track positions to replace (line, col, old_val, new_val)
+        replacements = []
 
-        mutated = re.sub(pattern, replace_number, src, count=3)
+        class NumberVisitor(ast.NodeVisitor):
+            def visit_Constant(self, node):
+                # Only process integer constants (not strings or in strings)
+                if isinstance(node.value, int) and node.value > 0:
+                    # Broaden the value
+                    if node.value < 10:
+                        new_val = node.value * 100
+                    elif node.value < 100:
+                        new_val = node.value * 10
+                    else:
+                        new_val = node.value * 2
+
+                    replacements.append((node.lineno, node.col_offset, str(node.value), str(new_val)))
+                self.generic_visit(node)
+
+            # For Python 3.7 compatibility
+            def visit_Num(self, node):
+                if isinstance(node.n, int) and node.n > 0:
+                    if node.n < 10:
+                        new_val = node.n * 100
+                    elif node.n < 100:
+                        new_val = node.n * 10
+                    else:
+                        new_val = node.n * 2
+
+                    replacements.append((node.lineno, node.col_offset, str(node.n), str(new_val)))
+                self.generic_visit(node)
+
+        visitor = NumberVisitor()
+        visitor.visit(tree)
+
+        if not replacements:
+            return None
+
+        # Limit to first 3 replacements
+        replacements = replacements[:3]
+
+        # Apply replacements (in reverse order to maintain positions)
+        lines = src.split('\n')
+        for line_no, col_offset, old_val, new_val in reversed(replacements):
+            line_idx = line_no - 1
+            line = lines[line_idx]
+            # Replace at specific position
+            before = line[:col_offset]
+            after = line[col_offset:]
+            if after.startswith(old_val):
+                lines[line_idx] = before + new_val + after[len(old_val):]
+
+        mutated = '\n'.join(lines)
 
         if mutated == src:
             return None

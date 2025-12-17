@@ -88,7 +88,7 @@ Example 1 - Changing a regex pattern (only changed one line):
     class DateTimeParser:
         \"\"\"Original docstring preserved exactly.\"\"\"
 
-        _FOUR_DIGIT_RE: ClassVar[Pattern[str]] = re.compile(r"\d{4,}")  # Changed from \d{4}
+        _FOUR_DIGIT_RE: ClassVar[Pattern[str]] = re.compile(r"\d{{4,}}")  # Changed from \d{{4}}
 
         def parse(self, date_str):
             \"\"\"Original method docstring preserved.\"\"\"
